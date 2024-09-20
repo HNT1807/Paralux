@@ -113,11 +113,12 @@ def process_excel_files(uploaded_files, column_mapping):
         for index, row in df.iterrows():
             track_name = str(row[excel_column_to_number(column_mapping['track_name'])])
             version = str(row[excel_column_to_number(column_mapping['version'])])
+            album = str(row[excel_column_to_number(column_mapping['album'])])
 
             # Skip header rows or rows with incomplete data
             if ('tracktitle' in track_name.lower() or
                     track_name.strip() == '' or
-                    'cdtitle' in str(row[excel_column_to_number(column_mapping['album'])]).lower()):
+                    'cdtitle' in album.lower()):
                 continue
 
             full_track_name = f"{track_name} - {version}" if 'full' not in version.lower() else track_name
@@ -130,7 +131,7 @@ def process_excel_files(uploaded_files, column_mapping):
                 'Track Name': full_track_name,
                 'Version': 'Main' if 'full' in version.lower() else '',
                 'Artist': 'Paralux',
-                'Album': row[excel_column_to_number(column_mapping['album'])],
+                'Album': album,
                 'Composer': composers,
                 'CAE/IPI': composer_cae_ipis,
                 'Label': 'Paralux',
@@ -148,7 +149,7 @@ def process_excel_files(uploaded_files, column_mapping):
     combined_df['Version Sort Key'] = combined_df.apply(lambda row: version_sort_key(row['Track Name'].split(' - ')[-1] if ' - ' in row['Track Name'] else 'full', row['Original Index']), axis=1)
 
     combined_df = combined_df.sort_values(
-        by=['Base Track Name', 'Version Sort Key']
+        by=['Album', 'Base Track Name', 'Version Sort Key']
     )
 
     # Remove temporary columns used for sorting
