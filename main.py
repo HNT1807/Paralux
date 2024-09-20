@@ -56,7 +56,7 @@ def process_composers(composers):
             names.append(match.group(1))
             pros.append(match.group(2))
             shares.append(match.group(3) + '%')
-            cae_ipis.append(match.group(4))
+            cae_ipis.append(match.group(4).strip())  # Use strip() to remove any unintended whitespace
     return (' / '.join(f"{name} ({share})" for name, share in zip(names, shares)),
             ' / '.join(cae_ipis),
             ' / '.join(pros))
@@ -82,20 +82,27 @@ def get_base_track_name(full_track_name):
     return full_track_name.split(' - ')[0] if ' - ' in full_track_name else full_track_name
 
 
-def version_sort_key(version):
+import streamlit as st
+import pandas as pd
+import io
+import uuid
+import base64
+import re
+import openpyxl
+
+
+
+def version_sort_key(version, original_index):
     version = str(version).lower()
-    if version == 'full':
-        return (0, '')
-    elif version.startswith('no '):
-        return (1, version)
+    if 'full' in version:
+        return (0, 0)
     elif re.match(r'\d+\s*second', version):
         seconds = int(re.search(r'\d+', version).group())
-        return (2, seconds)
+        return (3, -seconds, original_index)  # Negative to sort from longest to shortest
     elif 'stem' in version:
-        return (3, version)
+        return (4, original_index)
     else:
-        return (4, version)
-
+        return (1, original_index)  # All other versions (including 'No' versions)
 
 def process_excel_files(uploaded_files, column_mapping):
     combined_data = []
@@ -103,7 +110,7 @@ def process_excel_files(uploaded_files, column_mapping):
     for file in uploaded_files:
         df = pd.read_excel(file, header=None)
 
-        for _, row in df.iterrows():
+        for index, row in df.iterrows():
             track_name = str(row[excel_column_to_number(column_mapping['track_name'])])
             version = str(row[excel_column_to_number(column_mapping['version'])])
 
@@ -113,7 +120,7 @@ def process_excel_files(uploaded_files, column_mapping):
                     'cdtitle' in str(row[excel_column_to_number(column_mapping['album'])]).lower()):
                 continue
 
-            full_track_name = f"{track_name} {version}" if version.lower() != 'full' else track_name
+            full_track_name = f"{track_name} - {version}" if 'full' not in version.lower() else track_name
 
             composers, composer_cae_ipis, composer_pros = process_composers(
                 row[excel_column_to_number(column_mapping['composers'])])
@@ -121,14 +128,15 @@ def process_excel_files(uploaded_files, column_mapping):
 
             new_row = {
                 'Track Name': full_track_name,
-                'Version': 'Main' if version.lower() == 'full' else '',
+                'Version': 'Main' if 'full' in version.lower() else '',
                 'Artist': 'Paralux',
                 'Album': row[excel_column_to_number(column_mapping['album'])],
                 'Composer': composers,
                 'CAE/IPI': composer_cae_ipis,
                 'Label': 'Paralux',
                 'Publisher': publishers,
-                'PRO': composer_pros
+                'PRO': composer_pros,
+                'Original Index': index
             }
 
             combined_data.append(new_row)
@@ -136,16 +144,15 @@ def process_excel_files(uploaded_files, column_mapping):
     combined_df = pd.DataFrame(combined_data)
 
     # Sort the DataFrame
-    combined_df['Base Track Name'] = combined_df['Track Name'].apply(get_base_track_name)
-    combined_df['Version Sort Key'] = combined_df['Track Name'].apply(
-        lambda x: version_sort_key(x.split(' - ')[-1] if ' - ' in x else 'full'))
+    combined_df['Base Track Name'] = combined_df['Track Name'].apply(lambda x: x.split(' - ')[0])
+    combined_df['Version Sort Key'] = combined_df.apply(lambda row: version_sort_key(row['Track Name'].split(' - ')[-1] if ' - ' in row['Track Name'] else 'full', row['Original Index']), axis=1)
 
     combined_df = combined_df.sort_values(
         by=['Base Track Name', 'Version Sort Key']
     )
 
     # Remove temporary columns used for sorting
-    combined_df = combined_df.drop(columns=['Base Track Name', 'Version Sort Key'])
+    combined_df = combined_df.drop(columns=['Base Track Name', 'Version Sort Key', 'Original Index'])
 
     return combined_df
 
@@ -155,9 +162,22 @@ def get_binary_file_downloader_html(df, filename):
     df.to_excel(towrite, index=False, engine='openpyxl')
     towrite.seek(0)
     b64 = base64.b64encode(towrite.read()).decode()
-    return f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}"><button class="custom-button">Download Processed Excel File</button></a>'
-
-
+    href = f'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}'
+    return f"""
+        <html>
+        <body>
+        <script>
+            var link = document.createElement('a');
+            link.href = '{href}';
+            link.download = '{filename}';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        </script>
+        </body>
+        </html>
+    """
+# Main app layout
 # Main app layout
 st.markdown("<h1 class='main-title'>PARALUX Metadata Processor</h1>", unsafe_allow_html=True)
 
@@ -184,9 +204,7 @@ with col2:
                 combined_df = process_excel_files(uploaded_files, column_mapping)
                 if not combined_df.empty:
                     st.success(f"Files processed and combined successfully! Total rows: {len(combined_df)}")
-                    st.markdown("<div class='download-button'>", unsafe_allow_html=True)
-                    st.markdown(get_binary_file_downloader_html(combined_df, output_filename), unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+                    st.components.v1.html(get_binary_file_downloader_html(combined_df, output_filename), height=0)
                 else:
                     st.error("No data was processed. Please check your input files and try again.")
     else:
