@@ -92,23 +92,35 @@ import openpyxl
 
 
 
-def version_sort_key(version, original_index):
+def version_sort_key(version):
     version = str(version).lower()
     if 'full' in version:
-        return (0, 0)
+        return (0, '')
+    elif version.startswith('no '):
+        return (1, version)
     elif re.match(r'\d+\s*second', version):
         seconds = int(re.search(r'\d+', version).group())
-        return (3, -seconds, original_index)  # Negative to sort from longest to shortest
+        return (2, -seconds)  # Negative to sort from longest to shortest
     elif 'stem' in version:
-        return (4, original_index)
+        return (3, version)
     else:
-        return (1, original_index)  # All other versions (including 'No' versions)
+        return (4, version)
 
 def process_excel_files(uploaded_files, column_mapping):
     combined_data = []
+    file_index = 0
 
     for file in uploaded_files:
         df = pd.read_excel(file, header=None)
+        file_index += 1
+
+        # First pass to get the order of full versions
+        full_versions_order = {}
+        for index, row in df.iterrows():
+            track_name = str(row[excel_column_to_number(column_mapping['track_name'])])
+            version = str(row[excel_column_to_number(column_mapping['version'])])
+            if 'full' in version.lower():
+                full_versions_order[track_name] = index
 
         for index, row in df.iterrows():
             track_name = str(row[excel_column_to_number(column_mapping['track_name'])])
@@ -137,7 +149,9 @@ def process_excel_files(uploaded_files, column_mapping):
                 'Label': 'Paralux',
                 'Publisher': publishers,
                 'PRO': composer_pros,
-                'Original Index': index
+                'File Order': file_index,
+                'Full Version Order': full_versions_order.get(track_name, float('inf')),
+                'Version Sort Key': version_sort_key(version)
             }
 
             combined_data.append(new_row)
@@ -145,15 +159,12 @@ def process_excel_files(uploaded_files, column_mapping):
     combined_df = pd.DataFrame(combined_data)
 
     # Sort the DataFrame
-    combined_df['Base Track Name'] = combined_df['Track Name'].apply(lambda x: x.split(' - ')[0])
-    combined_df['Version Sort Key'] = combined_df.apply(lambda row: version_sort_key(row['Track Name'].split(' - ')[-1] if ' - ' in row['Track Name'] else 'full', row['Original Index']), axis=1)
-
     combined_df = combined_df.sort_values(
-        by=['Album', 'Base Track Name', 'Version Sort Key']
+        by=['File Order', 'Full Version Order', 'Version Sort Key']
     )
 
     # Remove temporary columns used for sorting
-    combined_df = combined_df.drop(columns=['Base Track Name', 'Version Sort Key', 'Original Index'])
+    combined_df = combined_df.drop(columns=['File Order', 'Full Version Order', 'Version Sort Key'])
 
     return combined_df
 
