@@ -45,19 +45,30 @@ def excel_column_to_number(column_letter):
 
 
 def process_composers(composers):
+    if not isinstance(composers, str) or composers.strip() == '':
+        return '', '', ''  # Return empty strings if input is not valid
+
     composer_list = composers.split(',')
     names = []
     shares = []
     pros = []
     cae_ipis = []
     for composer in composer_list:
-        match = re.match(r'(.*?)\s*\((.*?)\)\s*(\d+)%\s*\[(.*?)\]', composer.strip())
+        composer = composer.strip()
+        match = re.match(r'(.*?)\s*\((.*?)\)\s*(\d+)%\s*\[(.*?)\]', composer)
         if match:
             names.append(match.group(1))
             pros.append(match.group(2))
             shares.append(match.group(3) + '%')
-            cae_ipis.append(match.group(4).strip())  # Use strip() to remove any unintended whitespace
-    return (' / '.join(f"{name} ({share})" for name, share in zip(names, shares)),
+            cae_ipis.append(match.group(4).strip())
+        else:
+            # If the pattern doesn't match, add the whole string as a name
+            names.append(composer)
+            pros.append('')
+            shares.append('')
+            cae_ipis.append('')
+    
+    return (' / '.join(f"{name} ({share})" if share else name for name, share in zip(names, shares)),
             ' / '.join(cae_ipis),
             ' / '.join(pros))
 
