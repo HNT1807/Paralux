@@ -74,15 +74,27 @@ def process_composers(composers):
 
 
 def process_publishers(publishers):
+    if not publishers or pd.isna(publishers):
+        return ''  # Return empty string for empty or NaN values
+    
+    publishers = str(publishers).strip()  # Convert to string and remove leading/trailing whitespace
+    if not publishers:
+        return ''  # Return empty string if the result is an empty string
+
     publisher_list = publishers.split(',')
-    names = []
-    shares = []
+    result = []
     for publisher in publisher_list:
-        match = re.match(r'(.*?)\s*\((.*?)\)\s*(\d+)%\s*\[(.*?)\]', publisher.strip())
+        publisher = publisher.strip()
+        match = re.match(r'(.*?)\s*\((.*?)\)\s*(\d+)%\s*\[(.*?)\]', publisher)
         if match:
-            names.append(match.group(1))
-            shares.append(match.group(3) + '%')
-    return ' / '.join(f"{name} ({share})" for name, share in zip(names, shares))
+            name = match.group(1)
+            share = match.group(3) + '%'
+            result.append(f"{name} ({share})")
+        else:
+            # If the pattern doesn't match, add the whole string as a publisher name
+            result.append(publisher)
+    
+    return ' / '.join(result)
 
 
 import re
